@@ -48,8 +48,9 @@ app.post('/transaction/broadcast', function (req, res) {
   });
 });
 
+// Create and broadcast a new block
 app.get('/mine', function (req, res) {
-  const lastBlock = bitcoin.getLastBlock;
+  const lastBlock = bitcoin.getLastBlock();
   const previousBlockHash = lastBlock['hash'];
   const currentBlockData = {
     transactions: bitcoin.pendingTransactions,
@@ -62,16 +63,47 @@ app.get('/mine', function (req, res) {
     currentBlockData,
     nonce
   );
+  const newBlock = bitcoin.createNewBlock(nonce, blockhash, previousBlockHash);
 
-  // Mining reward
-  bitcoin.createNewTransaction(12.5, '00', nodeAddress);
-
-  const newBlock = bitcoin.createNewBlock(nonce, previousBlockHash, blockhash);
-
-  res.json({
-    note: 'New block mined successfully',
-    block: newBlock,
+  const miningPromises = [];
+  // Broadcast the new block
+  bitcoin.networkNodes.forEach((networkNodeUrl) => {
+    miningPromises.push(
+      axios.post(`${networkNodeUrl}/receive-new-block`, { newBlock })
+    );
   });
+
+  Promise.all(miningPromises)
+    .then(() => {
+      // Broadcast the reward transaction, the mining reward is added to the next block.
+      return axios.post(`${bitcoin.currentNodeUrl}/transaction/broadcast`, {
+        amount: 12.5,
+        sender: '00',
+        recipient: nodeAddress,
+      });
+    })
+    .then(() => {
+      res.json({
+        note: 'New block mined & broadcast successfully',
+        block: newBlock,
+      });
+    });
+});
+
+// Receive a new block
+app.post('/receive-new-block', function (req, res) {
+  const { newBlock } = req.body;
+  // Validating the new block
+  const lastBlock = bitcoin.getLastBlock();
+  const isCorrectHash = lastBlock.hash === newBlock.previousBlockHash;
+  const isCorrectIndex = lastBlock['index'] + 1 === newBlock['index'];
+  if (isCorrectHash && isCorrectIndex) {
+    bitcoin.chain.push(newBlock);
+    bitcoin.pendingTransactions = [];
+    res.json({ note: 'New block received and accepted.', newBlock });
+  } else {
+    res.json({ note: 'New block rejected.', newBlock });
+  }
 });
 
 // Register a node and broadcast it to the network
