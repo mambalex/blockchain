@@ -77,7 +77,7 @@ app.get('/mine', function (req, res) {
     .then(() => {
       // Broadcast the reward transaction, the mining reward is added to the next block.
       return axios.post(`${bitcoin.currentNodeUrl}/transaction/broadcast`, {
-        amount: 12.5,
+        amount: 6.25,
         sender: '00',
         recipient: nodeAddress,
       });
